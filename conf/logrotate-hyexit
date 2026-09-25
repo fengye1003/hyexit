@@ -1,0 +1,8 @@
+/opt/hyexit/logs/*.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

@@ -1,0 +1,13 @@
+{
+  "host": "0.0.0.0",
+  "port": 3000,
+  "uiPath": "/panel",
+  "token": "",
+  "controller": "",
+  "clashConfig": "C:\\Users\\<you>\\AppData\\Roaming\\io.github.clash-verge-rev.clash-verge-rev\\clash-verge.yaml",
+  "totpSecret": "",
+  "sessionSecret": "",
+  "sessionDays": 30,
+  "lockFails": 5,
+  "lockMinutes": 120
+}

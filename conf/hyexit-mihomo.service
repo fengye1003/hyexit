@@ -1,0 +1,23 @@
+[Unit]
+Description=hyexit mihomo - dedicated proxy for the Tailscale exit node (does NOT touch host traffic)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hyexit
+ExecStart=/opt/hyexit/bin/mihomo -d /opt/hyexit/config
+ExecStartPost=/opt/hyexit/bin/route-up.sh
+ExecStopPost=/opt/hyexit/bin/route-down.sh
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+StandardOutput=append:/opt/hyexit/logs/mihomo.log
+StandardError=append:/opt/hyexit/logs/mihomo.log
+
+[Install]
+WantedBy=multi-user.target

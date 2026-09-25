@@ -1,0 +1,41 @@
+# --- secrets and generated state: never commit -----------------------------
+config.yaml
+config.dry-*.yaml
+config.bak-*.yaml
+subs.env
+gen.env
+*.secret
+controller.secret
+totp.secret
+panel-locks.json
+panel-otp.json
+.panel-session
+rules-*.txt
+watchdog.state
+
+# --- runtime trees ---------------------------------------------------------
+providers/
+ruleset/
+logs/
+state/
+panel/public/
+*.log
+
+# --- tooling ---------------------------------------------------------------
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# --- local dashboard (dashboard/) ------------------------------------------
+dashboard/config.json
+dashboard/state/
+dashboard/logs/
+dashboard/.panel-session
+dashboard/public/
+dashboard/zashboard.zip
+dashboard/_unzip/
+
+# --- Windows rescue tool output --------------------------------------------
+clash-tun-rescue.log

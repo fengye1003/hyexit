@@ -1,0 +1,19 @@
+[Unit]
+Description=hyexit control panel - TOTP gateway + zashboard (127.0.0.1 only)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hyexit/panel
+# Use an absolute path to node: cron/non-login shells on many images have no node on PATH.
+ExecStart=/usr/bin/node /opt/hyexit/panel/server.mjs
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/hyexit/logs/panel.log
+StandardError=append:/opt/hyexit/logs/panel.log
+
+[Install]
+WantedBy=multi-user.target
