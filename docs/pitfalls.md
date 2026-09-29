@@ -235,3 +235,19 @@ IP follows the default route into the TUN, exits via a proxy node, and the serve
 at key exchange (`kex_exchange_identification`) — often a shared proxy-node IP tripping sshd's per-source
 limits, not a ban list. Diagnose with `Find-NetRoute -RemoteIPAddress <target>`; fix by marking your own
 servers `DIRECT` or by reaching them over the tailnet.
+
+**25. Domain rules never match a connection that was built on an IP address.** Tailscale resolves its
+own hostnames and connects straight to the resulting IPs, so those rows appear in Clash's connection
+table with an **empty `host`** — `DOMAIN-SUFFIX,tailscale.com` is inert for them and they fall through
+to `MATCH -> proxy`. The proxied control-plane session was being replaced about every 90 s (it is
+long-lived by design), and the coordination server reacts by marking the host **offline**: every other
+device shows it gone — the phone's exit node turns red and pushes a notification — while the host itself
+looks perfectly healthy (`tailscale status` fine, no NIC/WLAN/sleep events in the Windows log,
+`tailscaled` never restarted, peers see an unchanged disco key). The data plane stays direct, so the
+machine is still fully usable; only the tailnet's *view* of it is broken. Fix with `IP-CIDR` rules
+(`IP-CIDR,192.200.0.0/24,DIRECT` = Tailscale Inc.'s own control-plane range per ARIN RDAP, plus your own
+DERP node's `/32`); `tools/tailscale-direct.mjs` writes them and verifies the live chain. **Rule of
+thumb: `host=-` in Clash's connection table means the connection was built on an IP — no `DOMAIN` rule
+can ever match it, so read that column first, not the rule.** Companion lesson: **"offline in the
+tailnet" does not mean "the device lost its network"** — look at the control-plane connection before
+the NIC. Full timeline and measurements: `docs/windows-tun.md` §"Round two".

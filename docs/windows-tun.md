@@ -136,6 +136,77 @@ the *public* endpoint (10–114 ms, jittery) rather than the LAN one, although b
 addresses at all, while a public IP needs no such permission — hence "works, but the long way round".
 Granting it brings the same-Wi-Fi case down to single-digit ms; campus and cellular are unaffected.
 
+### Round two: five rules are not enough — Tailscale's own connections are built on IPs
+
+Later the same host started showing up as **offline** to the rest of the tailnet: the phone using it as an
+exit node turned red and pushed "device offline" notifications, twice or more within an hour. The host
+itself noticed nothing — `tailscale status` was healthy, peers were `direct`, and the Windows event log had
+no WLAN / DHCP / TCPIP / sleep entries at all. `tailscaled` had not restarted either (peers' view of our
+disco key never changed, and that key is regenerated on every process start).
+
+The five rules above do not cover everything because **they all depend on seeing a hostname** — and
+Tailscale resolves hostnames *itself*, bypassing the proxy's fake-ip DNS. It then connects to the **real
+IPs**, and in Clash's connection table those rows carry an **empty `host`** — so every `DOMAIN-SUFFIX` rule
+is inert for them and they fall through to `MATCH -> proxy`.
+
+| Evidence | What it showed |
+|---|---|
+| `netstat -ano` + PID→name | `tailscaled.exe` held `<TUN gateway>:<port> → 192.200.0.103:443` (control plane) and `→ <own VPS>:443` (self-hosted DERP) |
+| Clash `/connections` | the same two rows: `rule=Match()`, `chain=<a proxy node>` — and **`host=-`** |
+| ARIN RDAP for `192.200.0.0/24` | `NET-192-200-0-0-1`, name `TAILS`, registrant **Tailscale Inc.**; `controlplane`, `login` and every `lb.<region>` resolve inside it |
+
+So the control-plane session — a long-lived TCP connection — was running through a third-party proxy node.
+Whenever that node reaped or replaced the connection, the coordination server marked this host offline:
+every other device saw it vanish, while the data plane (UDP 3478/41641) stayed direct and the host stayed
+perfectly usable.
+
+**Measured on the same host, one rule change apart** (2 s sampler; connections counted by *identity* =
+remote + local port, so a reconnect is visible even when the remote address stays the same):
+
+| Connection | Before | After |
+|---|---|---|
+| control plane `192.200.0.0/24` | 28 connections, **27 torn down** in 18.1 min (≈89/h; the long-lived ones survived only 87–135 s) | **1 connection, alive 957 s, 0 teardowns** in 15.9 min |
+| self-hosted DERP | 14 connections, **13 torn down** (≈43/h; lifetimes 60·60·60·118·120·122 s) | **1 connection, alive 957 s, 0 teardowns** |
+
+`derp_home_change` stayed constant the whole time — the DERP *region* never changed. **A connection that
+keeps dying every ~60–90 s while its selection stays put is being killed by something on the path**, not
+re-homed.
+
+**The two extra rules** (still destination-only, still unable to touch exit-node traffic):
+
+```yaml
+- IP-CIDR,192.200.0.0/24,DIRECT              # Tailscale's control plane / identity service
+- IP-CIDR,<your DERP node's IP>/32,DIRECT    # your own relay (derp.<your-domain>)
+```
+
+`tools/tailscale-direct.mjs` writes all seven. It reads the self-hosted DERP address out of the daemon's
+own DERP map at run time (anything that is not `*.tailscale.com`), so no site-specific address is baked
+into the tool — and it resolves it through a public resolver **addressed by IP**, because the local one
+is fake-ip poisoned.
+
+Two portable lessons:
+
+* **`host=-` in Clash's connection table means the connection was built on an IP address**, so every
+  `DOMAIN*` rule is inert for it. When "a program with a domain rule still gets proxied", read that column
+  first — not the rule.
+* **"A device is offline in the tailnet" does not mean "the device lost its network."** Losing the
+  control-plane connection alone is enough for every other device to see it as gone. If the host's own
+  `tailscale status` looks fine while peers report it offline, start at the control-plane connection — not
+  at the NIC.
+
+*Finding those IPs without being fooled by fake-ip:* resolve through a public resolver addressed **by IP**
+(e.g. `https://223.5.5.5/resolve?name=…`), then confirm ownership with RDAP instead of guessing.
+
+*Reading tailscaled's log on Windows:* `C:\ProgramData\Tailscale\Logs` is SYSTEM-only — a normal user
+cannot even list the directory. Usable substitutes: `tailscale debug daemon-logs` (live only, **no
+replay**), `tailscale debug peer-endpoint-changes <peer>` (**a ring buffer covering roughly the last
+hour** — this is what made the timeline above possible) and `tailscale debug metrics` (cumulative
+counters).
+
+*Residual:* connections to **official** DERP servers are still proxied — they are IP connections to
+per-node addresses that change, so a static `IP-CIDR` list would need maintenance. With a self-hosted DERP
+as the home region, this only surfaces occasionally.
+
 ## TUN also hijacks your own ops links
 
 With TUN on, `ssh` from this machine to your own VPS's **public** IP followed the default route into the

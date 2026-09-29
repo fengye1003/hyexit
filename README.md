@@ -141,9 +141,12 @@ what it is doing.
 * `docs/pitfalls.md` — every trap that cost real debugging time, with the symptom and the fix.
 * `docs/repro.md` — reproduce / verify / roll back, step by step.
 * `docs/windows-tun.md` — the local/Windows side: TUN crash radius, the default-route race, TUN vs
-  Tailscale relaying, port reservation, and the rescue tool.
+  Tailscale relaying, why five destination rules were not enough, port reservation, and the rescue tool.
 * `tools/tailscale-direct.mjs` — keep Tailscale's own traffic out of a Clash TUN *without* breaking
-  exit-node forwarding (`install` / `verify`), including the two Clash Verge traps.
+  exit-node forwarding (`install` / `verify`). Seven destination rules, including two **IP-CIDR** ones:
+  Tailscale resolves hostnames itself and connects to real IPs, so those rows show `host=-` in Clash's
+  table and no `DOMAIN` rule can ever match them. `verify` also asserts the live connections are on the
+  `DIRECT` chain, not just that the rules are loaded.
 * `dashboard/README.md` — the TOTP-gated local dashboard: install, auth, troubleshooting.
 
 ## Requirements
