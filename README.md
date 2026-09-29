@@ -142,6 +142,8 @@ what it is doing.
 * `docs/repro.md` — reproduce / verify / roll back, step by step.
 * `docs/windows-tun.md` — the local/Windows side: TUN crash radius, the default-route race, TUN vs
   Tailscale relaying, port reservation, and the rescue tool.
+* `tools/tailscale-direct.mjs` — keep Tailscale's own traffic out of a Clash TUN *without* breaking
+  exit-node forwarding (`install` / `verify`), including the two Clash Verge traps.
 * `dashboard/README.md` — the TOTP-gated local dashboard: install, auth, troubleshooting.
 
 ## Requirements

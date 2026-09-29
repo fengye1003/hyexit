@@ -77,16 +77,64 @@ back to a relay.
 So Tailscale advertises **the proxy node's NAT mapping** as its own candidate endpoint. Remote peers
 cannot reach it → relay. This is the root cause behind "as soon as I enabled TUN, Tailscale got slower".
 
-Fix (three rules prepended to the merged config):
+### The fix — and the trap in the obvious version (corrected 2026-09-29)
+
+**The obvious fix is wrong when this host is also an exit node.** `PROCESS-NAME,tailscaled.exe,DIRECT`
+cannot tell the two jobs apart: the same `tailscaled` process both talks to Tailscale's own
+infrastructure *and* forwards other tailnet devices' traffic to the internet. Allow it by process and
+you allow the exit node too — it silently stops using the proxy, which is the whole point of the
+machine. Matching on source address does not work either: a Clash TUN normalises the source IP to its
+own gateway address (`198.18.0.1`; measured on 38/38 live connections).
+
+**So match on destination only:**
 
 ```yaml
-- PROCESS-NAME,tailscaled.exe,DIRECT
-- DOMAIN-SUFFIX,tailscale.com,DIRECT   # DERP / STUN / control plane
-- DOMAIN-SUFFIX,ts.net,DIRECT          # MagicDNS zone
+- IP-CIDR,100.64.0.0/10,DIRECT          # tailnet range
+- DOMAIN-SUFFIX,tailscale.com,DIRECT    # control plane + DERP (443)
+- DOMAIN-SUFFIX,tailscale.io,DIRECT
+- DST-PORT,3478,DIRECT                  # STUN (decides the advertised endpoint)
+- DST-PORT,41641,DIRECT                 # WireGuard direct data path
 ```
 
-The trade-off is that Tailscale's control-plane traffic no longer travels through the proxy.
-(`PROCESS-NAME` needs process lookup enabled in the core.)
+Exit-node traffic targets arbitrary public addresses, so it cannot match any of these and keeps
+following `MATCH -> proxy`. **The two requirements cannot conflict by construction** — there is no
+rule ordering to gamble on. (MagicDNS needs no rule of its own: it resolves into `100.64.0.0/10`.)
+
+**Where to put them, if you use Clash Verge — two traps:**
+
+1. **The global Merge is a deep-merge template; `prepend-rules` is silently ignored there.** Written
+   into `profiles/Merge.yaml`, it lands in the generated config as an unknown *top-level key*
+   (`prepend-rules` appears in the top-level key list) while `rules:` stays untouched — and the core
+   ignores unknown top-level keys. Put the rules in the **global script** `profiles/Script.js`
+   instead, where `main(config)` can do `config.rules = extra.concat(config.rules || [])`.
+2. **A generated config is not a loaded config.** The config was regenerated at 17:31:03 (with the
+   rules) and the service started the core at 17:31:04 — yet `GET /rules` still reported the old
+   count. There is no way around the GUI: the core's home lives under the service account, is not
+   writable by a normal user, and `PUT /configs` rejects paths outside it. **Re-apply in the GUI**
+   (click the profile card, or fully quit including the tray and reopen).
+
+**Before / after (same host, same day, one core restart apart):**
+
+| Metric | Before | After |
+|---|---|---|
+| rules in the running core | 518 | **523** (5 extra, first in the list) |
+| `netcheck` `IPv4:` | the proxy node's address | **the carrier's real public IP** |
+| `Nearest DERP` | Los Angeles / Tokyo (both detours) | **a self-hosted relay** |
+| path to an on-LAN peer | `via DERP`, 490–900 ms | **`direct`, 10–114 ms** |
+
+**One-line self-check:** run `tailscale netcheck` — if the `IPv4:` mapping is not your carrier's real
+public IP, Tailscale is still being proxied.
+
+`tools/tailscale-direct.mjs` implements all of this: `install` writes the rules into the global
+script (simulating them against the real config first, and refusing to write if the result
+misbehaves), and `verify [peer]` asserts that the rules are live in the *running* core and that the
+peer is direct rather than relayed.
+
+**Residual (cosmetic, same-LAN only):** even when fixed, an on-LAN peer may still be reached through
+the *public* endpoint (10–114 ms, jittery) rather than the LAN one, although both sides advertise
+`192.168.x.x:41641`. On iOS 14+ an app needs the **Local Network** permission to send to LAN
+addresses at all, while a public IP needs no such permission — hence "works, but the long way round".
+Granting it brings the same-Wi-Fi case down to single-digit ms; campus and cellular are unaffected.
 
 ## TUN also hijacks your own ops links
 
